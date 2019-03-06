@@ -20,7 +20,7 @@
 #define SS      18
 #define RST     14
 #define DI0     26
-#define BAND    915E6
+#define BAND    433E6
 
 // the OLED used
 U8X8_SSD1306_128X64_NONAME_SW_I2C u8x8(/* clock=*/ 15, /* data=*/ 4, /* reset=*/ 16);
@@ -29,9 +29,15 @@ BluetoothSerial ESP_BT; //Object for Bluetooth
 String receivedBluetooth;
 String receivedLora;
 
+union {
+  char toChar[7];
+  byte toByte[7];
+} arrayByteBT;
+
 int packetSize;
 char chipKeyTable[15][12];
 char chipKeyActive[12];
+String chipIDdecoded;
 unsigned long lastReceivedPacket[15];
 bool activeMode;
 bool ack = true;
@@ -61,25 +67,8 @@ union {
   byte byteAlt[4];
 } altUnion;
 
-
-void encrypt(char * plainText, char * key, unsigned char * outputBuffer) {
-  mbedtls_aes_context aes;
-  mbedtls_aes_init( &aes );
-  mbedtls_aes_setkey_enc( &aes, (const unsigned char*) key, strlen(key) * 8 );
-  mbedtls_aes_crypt_ecb( &aes, MBEDTLS_AES_ENCRYPT, (const unsigned char*)plainText, outputBuffer);
-  mbedtls_aes_free( &aes );
-}
-
-void decrypt(unsigned char * chipherText, char * key, unsigned char * outputBuffer) {
-  mbedtls_aes_context aes;
-  mbedtls_aes_init( &aes );
-  mbedtls_aes_setkey_dec( &aes, (const unsigned char*) key, strlen(key) * 8 );
-  mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, (const unsigned char*)chipherText, outputBuffer);
-  mbedtls_aes_free( &aes );
-}
-
 void decodeMess() {
-  // decodedMess -> 2 float et 1 int
+  // decodedMess -> 3 float et 1 int
   for (int i = 0 ; i < 4 ; i++) {
     latUnion.byteLat[i] = (byte)cryptedText[i];
     lonUnion.byteLon[i] = (byte)cryptedText[i + 4];
@@ -138,11 +127,14 @@ String receive_gps() {
     receivedLora += (char)LoRa.read();
   }
   Serial.println(receivedLora);
+
+
+  String tmpChip;
   // Serial.println("\n chipKey recupered : ");
-  for (int i = 0 ; i < 12 ; i++) {
-    chipKey[i] = receivedLora[i];
-    //Serial.print(chipKey[i]);
+  for (int i = 0 ; i < 6 ; i++) {
+    tmpChip += String(receivedLora[i], HEX);
   }
+  tmpChip.toCharArray(chipKey, 12);
   chipKeyInt = inTable();
   activeMode = isChipActive();
 
@@ -174,7 +166,7 @@ String receive_gps() {
 
   Serial.println("\n cryptedText : ");
   for (int i = 0; i < lengthMess; i++) {
-    cryptedText[i] = (unsigned char) receivedLora[i + 12];
+    cryptedText[i] = (unsigned char) receivedLora[i + 6];
   }
 
   /*
@@ -221,7 +213,6 @@ void receive_bluetooth() {
           }
         }
         break;
-      //regarder si carte en mode active
       case '3':
         // ajout carte
         Serial.print("\nAjout carte : ");
@@ -230,15 +221,20 @@ void receive_bluetooth() {
         }
         nbCarte++;
         break;
-      
+
       case '4':
-        break;
         // suppression carte
+        break;
+
     }
     if (!inTable()) {
 
     }
-    sendLora(receivedBTArray);
+    for(int i = 0 ; i<6 ; i++){
+      String tmp = String(receivedBTArray[2*i]) + String(receivedBTArray[2*i+1]); 
+      arrayByteBT.toByte[i] = (byte) strtol( tmp.c_str(), NULL, 16);
+    }
+    sendLora(arrayByteBT.toChar);
     Serial.print("Received:"); Serial.println(receivedBTArray);
 
   }
@@ -256,7 +252,7 @@ void setup() {
 
   LoRa.setPins(SS, RST, DI0);
 
-  ESP_BT.begin("SkiLocator"); //Name of your Bluetooth Signal
+  ESP_BT.begin("HuSki-1F05"); //Name of your Bluetooth Signal
   Serial.println("Bluetooth Device is Ready to Pair");
 
   Serial.println("Gateway launched");

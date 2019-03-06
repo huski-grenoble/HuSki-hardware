@@ -11,7 +11,7 @@
 #define SS 18
 #define RST 14
 #define DI0 26
-#define BAND 915E6
+#define BAND 433E6
 
 HardwareSerial gpsSerial(2);
 
@@ -19,7 +19,10 @@ int analogInput = 34;           // Battery voltage pin
 float resistance1 = 100000.0;   // First resistance for voltage divider (100 kOhms)
 float resistance2 = 100000.0;   // Second resistance for voltage divider (100 kOhms)
 
+
+byte chipByte[6];
 String chipId;                  // ChipID's card
+
 int batteryLevel;
 float gpsLat;
 float gpsLon;
@@ -27,6 +30,7 @@ float gpsAlt;
 bool gpsReady;
 
 String receivedText;
+String receivedTextBinary;
 String receivedRssi;
 long lastSendTime = 0;          // Last send time
 int interval = 10000;           // Interval between sends
@@ -146,25 +150,27 @@ void receiveLoRaMessage() {
   int packetSize = LoRa.parsePacket();
   if (packetSize) {
     Serial.printf("Received packet '");
+    receivedTextBinary = "";
     receivedText = "";
 
     while (LoRa.available()) {
-      receivedText += (char)LoRa.read();
+      receivedTextBinary += (char)LoRa.read();
     }
 
-    Serial.printf("%s", receivedText.c_str());
+    Serial.printf("%s", receivedTextBinary.c_str());
 
     Serial.printf("' with RSSI ");
     Serial.printf("%d\n\n", LoRa.packetRssi());
 
     bool messageForMe = true;
-    for (int i = 0; i < 12; i++) {
-      if (receivedText[i] != chipId[i]) {
+    for (int i = 0; i < 6; i++) {
+      receivedText += String(receivedTextBinary[i], HEX); 
+      if (receivedText[2*i] != chipId[2*i] || receivedText[2*i+1] != chipId[2*i+1]) {
         messageForMe = false;
       }
     }
     if (messageForMe) {
-      if (receivedText[12] == '1') {
+      if (receivedText[7] == '1') {
         Serial.printf("--> Mode ACTIVE <--\n\n");
         interval = 1000;
       } else {
@@ -278,6 +284,11 @@ String uint64_t_to_String(uint64_t number) {
   unsigned long long1 = (unsigned long)((number >> 32 ));
   unsigned long long2 = (unsigned long)((number));
 
+  chipByte[0] = (byte) (long1 >> 8);
+  chipByte[1] = (byte) (long1);
+  for(int i = 0 ; i<4 ; i++){
+    chipByte[5-i] = (byte) (long2 >> 8*i);
+  }
   String hex = String(long1, HEX) + String(long2, HEX); // six octets
   hex.toUpperCase();
   return hex;
