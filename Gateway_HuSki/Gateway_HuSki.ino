@@ -1,22 +1,14 @@
-/* https://robotzero.one/heltec-wifi-lora-32/
-   Sketch uses 146842 bytes (14%) of program storage space. Maximum is 1044464 bytes.
-   Global variables use 11628 bytes (3%) of dynamic memory, leaving 283284 bytes for local variables. Maximum is 294912 bytes.
+/* 
+HuSki - HuConnect
+
+Author : FOMBARON Quentin - FERREIRA Joffrey
+
 */
-// code de la gateway
 
 #include <U8x8lib.h>
 #include <LoRa.h>
 #include "mbedtls/aes.h"
 #include "BluetoothSerial.h" //Header File for Serial Bluetooth, will be added by default into Arduino
-
-// WIFI_LoRa_32 ports
-// GPIO5  -- SX1278's SCK
-// GPIO19 -- SX1278's MISO
-// GPIO27 -- SX1278's MOSI
-// GPIO18 -- SX1278's CS
-// GPIO14 -- SX1278's RESET
-// GPIO26 -- SX1278's IRQ(Interrupt Request)
-
 #define SS      18
 #define RST     14
 #define DI0     26
@@ -75,10 +67,11 @@ void decodeMess() {
     altUnion.byteAlt[i] = (byte)cryptedText[i + 8];
   }
   batteryLevel = (int) cryptedText[12];
-  Serial.printf("%f %f %f %d", latUnion.floatLat, lonUnion.floatLon, altUnion.floatAlt, batteryLevel);
+  Serial.printf("\nValeur recup : %f %f %f %d", latUnion.floatLat, lonUnion.floatLon, altUnion.floatAlt, batteryLevel);
   decryptedTextChar = String(latUnion.floatLat, 6) + " " + String(lonUnion.floatLon, 6) + " " + String(altUnion.floatAlt, 2) + " " + String(batteryLevel);
 }
 
+// retourne la place dans la table de la variable chipKey ou -1 sinon
 int inTable() {
   bool equal;
   for (int i = 0 ; i < nbCarte ; i++) {
@@ -95,13 +88,15 @@ int inTable() {
   return -1;
 }
 
+// Envoie de packet LoRa
 void sendLora(char *str) {
-  Serial.printf("Envoie du paquet LoRa : %s\n", str);
+  Serial.printf("\nEnvoie du paquet LoRa : %s", str);
   LoRa.beginPacket() ;
   LoRa.print(str) ;
   LoRa.endPacket();
 }
 
+// Retourne true si la variable chipKey est bien la carte en mode active, false sinon
 bool isChipActive() {
   activeMode = true;
   for (int i = 0; i < 12; i++) {
@@ -112,13 +107,13 @@ bool isChipActive() {
   return (activeMode);
 }
 
+//Retourne le messsage recu en Lora dechiffre ou null si la chipID recu n est pas dans la table
 String receive_gps() {
   lengthMess = 16;
   receivedRssiInt = (int) LoRa.packetRssi();
   receivedRssi = String(-receivedRssiInt);
 
-  // received a packet
-  Serial.println("\n\nReceived packet ");
+  Serial.println("\nReceived packet ");
   u8x8.drawString(0, 4, "PacketID");
 
   // read packet
@@ -130,37 +125,39 @@ String receive_gps() {
 
 
   String tmpChip;
-  Serial.println("\n chipKey recupered : ");
+  
   for (int i = 0 ; i < 6 ; i++) {
     tmpChip += String(receivedLora[i], HEX);
   }
   tmpChip.toUpperCase();
   tmpChip.toCharArray(chipKey, 13);
-  Serial.println(chipKey);
+  
   chipKeyInt = inTable();
-  Serial.printf("chipkeyInt : %d", chipKeyInt);
   activeMode = isChipActive();
-
-  if (chipKeyInt 
-  == -1) {
-    Serial.print("\nThis key is not in the table : ");
+  Serial.println("\nChipKey recupered : ");
+  Serial.print(chipKey);
+  Serial.printf("\nPlace dans la table: %d", chipKeyInt);
+  
+  if (chipKeyInt == -1) {
+    Serial.print("\nCarte absente de la table : ");
     Serial.println(chipKey);
     return "";
   }
-  
+
+  // verifie et corrige si la carte est bien dans le bon mode
   if (activeMode) {
-    Serial.println("Paquet reçu de la carte en mode active");
+    //Serial.println("\nPaquet reçu de la carte en mode active");
     if (millis() - lastReceivedPacket[chipKeyInt] > 5000) {
-      Serial.println("La carte n est pas en mode active");
+      Serial.println("\nWARNING : La carte n'est pas en mode active comme prevu -> Envoie mode active a la carte");
       (String(chipKey) + String(1)).toCharArray(receivedBTArray, 14);
       delay(100);
       sendLora(arrayByteBT.toChar);
     }
     lastReceivedPacket[chipKeyInt] = millis();
   } else {
-    Serial.println("Paquet reçu d une carte en mode normale");
+    // Serial.println("\nPaquet reçu d une carte en mode normale");
     if (millis() - lastReceivedPacket[chipKeyInt] < 5000) {
-      Serial.println("La carte n est pas en mode normale");
+      Serial.println("\nWARNING : La carte n est pas en mode normale -> Envoie mode normale a la carte");
       (String(chipKey) + String(0)).toCharArray(receivedBTArray, 14);
       delay(100);
       sendLora(arrayByteBT.toChar);
@@ -168,23 +165,14 @@ String receive_gps() {
     lastReceivedPacket[chipKeyInt] = millis();
   }
 
-
-
-  Serial.println("\n cryptedText : ");
   for (int i = 0; i < lengthMess; i++) {
     cryptedText[i] = (unsigned char) receivedLora[i + 6];
   }
-
-  /*
-    decrypt((unsigned char *) cryptedText, "abcdefghijklmnop", decryptedText);
-    Serial.println("\nDeciphered text: ");
-  */
-
-  // convertir les 9 octets en 2 float de 4 octet et 1 int
+  
+  // Dechiffrage du paquet recu
   decodeMess();
 
-  // print RSSI of packet
-  Serial.print("' with RSSI ");
+  Serial.print("\nRSSI : ");
   Serial.println(receivedRssi);
   u8x8.drawString(0, 5, "PacketRS");
   char currentrs[64];
@@ -200,26 +188,30 @@ void receive_bluetooth() {
     receivedBluetooth += (char) ESP_BT.read();
   }
   if (receivedBluetooth != "") {
+    
+    int place = inTable();
     receivedBluetooth.toCharArray(receivedBTArray, 14);
+    Serial.print("Received:"); Serial.println(receivedBTArray);
+    
+    // Recuperation de la chipID en hexa
     for (int i = 0 ; i < 12 ; i++) {
       chipKey[i] = receivedBTArray[i];
     }
+
+    // Creation du chipID sur 6 byte
     for (int i = 0 ; i < 6 ; i++) {
-      String tmp = String(receivedBTArray[2 * i]) + String(receivedBTArray[2 * i + 1]);
+      String tmp = String(receivedBTArray[2*i]) + String(receivedBTArray[2*i+1]);
       arrayByteBT.toByte[i] = (byte) 
       strtol( tmp.c_str(), NULL, 16);
     }
     arrayByteBT.toByte[6] = (byte) receivedBTArray[12];
+    
+    // switch sur le dernier octet pour savoir quoi faire
     switch (receivedBTArray[12]) {
-      case '1':
-        for (int i = 0 ; i < 12 ; i++) {
-          chipKeyActive[i] = receivedBTArray[i];
-        }
-        chipKeyInt = inTable();
-        lastReceivedPacket[chipKeyInt] = millis();
-        sendLora(arrayByteBT.toChar);
-        break;
+
+      // Mise en mode normal de la carte
       case '0':
+        Serial.println("\nMise en mode normale de la carte : ");Serial.println(chipKey);
         if (isChipActive) {
           for (int i = 0 ; i < 12 ; i++) {
             chipKeyActive[i] = (char) 0;
@@ -227,29 +219,52 @@ void receive_bluetooth() {
         }
         sendLora(arrayByteBT.toChar);
         break;
+        
+      // Mise en mode actif de la carte
+      case '1':
+        Serial.println("\nMise en mode actif de la carte : ");Serial.println(chipKey);
+        for (int i = 0 ; i < 12 ; i++) {
+          chipKeyActive[i] = receivedBTArray[i];
+        }
+        lastReceivedPacket[place] = millis();
+        sendLora(arrayByteBT.toChar);
+        break;
+        
+      // Ajout de carte a la table des chip ID
       case '3':
-        // ajout carte
-        Serial.print("\nAjout carte : ");
+        Serial.println("\nAjout de la carte : ");Serial.println(chipKey);
+        if(place!=-1){
+          Serial.println("WARNING : Tentative d'ajout d'une carte deja presente dans la table de chip ID");
+          break;
+        }
         for (int i = 0 ; i < 12 ; i++) {
           chipKeyTable[nbCarte][i] = chipKey[i];
         }
         nbCarte++;
         break;
 
+      // Suppression de carte à la table des chip ID
       case '4':
-        // suppression carte
+        Serial.println("\Suppression de la carte : ");Serial.println(chipKey);
+        if(place==-1){
+          Serial.println("WARNING : Tentative de suppression d'une carte absente dans la table de chip ID");
+          break;
+        }
+        for(int i = place ; i<nbCarte-2 ; i++){
+          for(int j = 0 ; j<12 ; j++){
+            chipKeyTable[i][j] = chipKeyTable[i+1][j]; 
+          }
+        }
+        nbCarte--;
         break;
-
     }
-    Serial.print("Received:"); Serial.println(receivedBTArray);
   }
 }
 
 void setup() {
 
-
   Serial.begin(115200);
-  while (!Serial); //if just the the basic function, must connect to a computer
+  while (!Serial);
   delay(1000);
 
   u8x8.begin();
@@ -278,16 +293,13 @@ void loop() {
       // transite le LoRa à l'application
       if (packetSize) {
         receivedLora = receive_gps();
-        Serial.println(receivedLora);
         ESP_BT.print(receivedLora);
-        // ESP_BT.flush();
       }
       //transite le BT aux cartes
       if (ESP_BT.hasClient()) {
         receive_bluetooth();
       }
       delay(20);
-
     }
     ESP_BT.flush();
   }
