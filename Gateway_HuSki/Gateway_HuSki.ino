@@ -1,7 +1,7 @@
-/* 
-HuSki - HuConnect
+/*
+  HuSki - HuConnect
 
-Author : FOMBARON Quentin - FERREIRA Joffrey
+  Author : FOMBARON Quentin - FERREIRA Joffrey
 
 */
 
@@ -125,19 +125,19 @@ String receive_gps() {
 
 
   String tmpChip;
-  
+
   for (int i = 0 ; i < 6 ; i++) {
     tmpChip += String(receivedLora[i], HEX);
   }
   tmpChip.toUpperCase();
   tmpChip.toCharArray(chipKey, 13);
-  
+
   chipKeyInt = inTable();
   activeMode = isChipActive();
   Serial.println("\nChipKey recupered : ");
   Serial.print(chipKey);
   Serial.printf("\nPlace dans la table: %d", chipKeyInt);
-  
+
   if (chipKeyInt == -1) {
     Serial.print("\nCarte absente de la table : ");
     Serial.println(chipKey);
@@ -168,7 +168,7 @@ String receive_gps() {
   for (int i = 0; i < lengthMess; i++) {
     cryptedText[i] = (unsigned char) receivedLora[i + 6];
   }
-  
+
   // Dechiffrage du paquet recu
   decodeMess();
 
@@ -188,52 +188,63 @@ void receive_bluetooth() {
     receivedBluetooth += (char) ESP_BT.read();
   }
   if (receivedBluetooth != "") {
-    
+
     int place = inTable();
     receivedBluetooth.toCharArray(receivedBTArray, 14);
     Serial.print("Received:"); Serial.println(receivedBTArray);
-    
+
     // Recuperation de la chipID en hexa
     for (int i = 0 ; i < 12 ; i++) {
       chipKey[i] = receivedBTArray[i];
     }
 
-    // Creation du chipID sur 6 byte
-    for (int i = 0 ; i < 6 ; i++) {
-      String tmp = String(receivedBTArray[2*i]) + String(receivedBTArray[2*i+1]);
-      arrayByteBT.toByte[i] = (byte) 
-      strtol( tmp.c_str(), NULL, 16);
-    }
-    arrayByteBT.toByte[6] = (byte) receivedBTArray[12];
-    
+
     // switch sur le dernier octet pour savoir quoi faire
     switch (receivedBTArray[12]) {
 
       // Mise en mode normal de la carte
       case '0':
-        Serial.println("\nMise en mode normale de la carte : ");Serial.println(chipKey);
+        Serial.println("\nMise en mode normale de la carte : "); Serial.println(chipKey);
         if (isChipActive) {
           for (int i = 0 ; i < 12 ; i++) {
             chipKeyActive[i] = (char) 0;
           }
         }
+        for (int i = 0 ; i < nbCarte - 1 ; i++) {
+          if (i != place) {
+            for (int j = 0 ; j < 6 ; j++) {
+              String tmp = String(chipKeyTable[i][2*j]) + String(chipKeyTable[i][2*j+1]);
+              arrayByteBT.toByte[i] = (byte) strtol( tmp.c_str(), NULL, 16);
+            }
+            arrayByteBT.toByte[6] = (byte) '3';
+          }
+        }
         sendLora(arrayByteBT.toChar);
         break;
-        
+
       // Mise en mode actif de la carte
       case '1':
-        Serial.println("\nMise en mode actif de la carte : ");Serial.println(chipKey);
+        Serial.println("\nMise en mode actif de la carte : "); Serial.println(chipKey);
         for (int i = 0 ; i < 12 ; i++) {
           chipKeyActive[i] = receivedBTArray[i];
         }
-        lastReceivedPacket[place] = millis();
+        for (int i = 0 ; i < nbCarte - 1 ; i++) {
+          if (i != place) {
+            for (int j = 0 ; j < 6 ; j++) {
+              String tmp = String(chipKeyTable[i][2*j]) + String(chipKeyTable[i][2*j+1]);
+              arrayByteBT.toByte[i] = (byte) strtol( tmp.c_str(), NULL, 16);
+            }
+            arrayByteBT.toByte[6] = (byte) '4';
+          }
+        }
         sendLora(arrayByteBT.toChar);
+        lastReceivedPacket[place] = millis();
         break;
-        
+
       // Ajout de carte a la table des chip ID
       case '3':
-        Serial.println("\nAjout de la carte : ");Serial.println(chipKey);
-        if(place!=-1){
+        Serial.println("\nAjout de la carte : "); Serial.println(chipKey);
+        if (place != -1) {
           Serial.println("WARNING : Tentative d'ajout d'une carte deja presente dans la table de chip ID");
           break;
         }
@@ -245,19 +256,28 @@ void receive_bluetooth() {
 
       // Suppression de carte à la table des chip ID
       case '4':
-        Serial.println("\Suppression de la carte : ");Serial.println(chipKey);
-        if(place==-1){
+        Serial.println("\Suppression de la carte : "); Serial.println(chipKey);
+        if (place == -1) {
           Serial.println("WARNING : Tentative de suppression d'une carte absente dans la table de chip ID");
           break;
         }
-        for(int i = place ; i<nbCarte-2 ; i++){
-          for(int j = 0 ; j<12 ; j++){
-            chipKeyTable[i][j] = chipKeyTable[i+1][j]; 
+        for (int i = place ; i < nbCarte - 2 ; i++) {
+          for (int j = 0 ; j < 12 ; j++) {
+            chipKeyTable[i][j] = chipKeyTable[i + 1][j];
           }
         }
         nbCarte--;
         break;
     }
+
+    // Creation du chipID sur 6 byte
+    for (int i = 0 ; i < 6 ; i++) {
+      String tmp = String(receivedBTArray[2 * i]) + String(receivedBTArray[2 * i + 1]);
+      arrayByteBT.toByte[i] = (byte) strtol( tmp.c_str(), NULL, 16);
+    }
+    arrayByteBT.toByte[6] = (byte) receivedBTArray[12];
+
+    sendLora(arrayByteBT.toChar);
   }
 }
 

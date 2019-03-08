@@ -38,6 +38,7 @@ char encodedMess[13];
 
 // Create a TinyGPS++ object
 TinyGPSPlus gps;
+bool paired;
 
 union {
   float floatLat;
@@ -53,62 +54,6 @@ union {
   float floatAlt;
   byte byteAlt[4];
 } altUnion;
-
-void setup() {
-  Serial.begin(115200);
-  pinMode(analogInput, INPUT);
-
-  //while (!Serial); // If just the the basic function, must connect to a computer
-
-  gpsSerial.begin(9600, SERIAL_8N1, RXD2, TXD2);
-
-  pinMode(25, OUTPUT); // Send success, LED will bright 1 second
-
-  SPI.begin(5, 19, 27, SS);
-  LoRa.setPins(SS, RST, DI0);
-  if (!LoRa.begin(BAND)) {
-    Serial.printf("Starting LoRa failed!\n");
-    while (1);
-  }
-  Serial.printf("LoRa Initial OK!\n");
-
-  getChipId();
-
-  delay(2000);
-}
-
-void loop() {
-  if (millis() - lastSendTime > interval) {
-    gpsInfo();
-    while (gpsSerial.available()) {
-      if (gps.encode(gpsSerial.read())) {
-        gpsInfo();
-        break;
-      }
-    }
-
-    /*if (millis() > 5000 && gps.charsProcessed() < 10) {
-      Serial.printf("No GPS detected\n");
-      while (true);
-      }*/
-
-    Serial.printf("ChipID : %s\n", chipId.c_str());
-
-    getBatteryVoltage();
-
-    // Recuperation en char * de la concat de la valeur
-    encodeMess();
-
-    if (gpsReady) {
-      sendLoRaMessage();
-    } else {
-      Serial.printf("GPS not ready...\n\n");
-    }
-    lastSendTime = millis();
-  }
-
-  receiveLoRaMessage();
-}
 
 /*---------------------------------------------------------- Encoding Message ------------------------------------------------------------ */
 void encodeMess() {
@@ -169,15 +114,28 @@ void receiveLoRaMessage() {
       }
     }
     if (messageForMe) {
-      if (receivedTextBinary[6] == '1') {
-        Serial.printf("--> Mode ACTIVE <--\n\n");
-        interval = 1000;
-      } else {
-        Serial.printf("--> Mode NORMAL <--\n\n");
-        interval = 10000;
+      Serial.println("\nRecu un message pour moi\n");
+      paired = true;
+      switch (receivedTextBinary[6]) {
+        case '1':
+          Serial.printf("--> Mode ACTIVE <--\n\n");
+          interval = 1000;
+          break;
+        case '0' :
+          Serial.printf("--> Mode NORMAL <--\n\n");
+          interval = 10000;
+          break;
+        case '3' :
+          Serial.println("--> Appareillage <--\n\n");
+          paired = true;
+          break;
+        case '4' :
+          Serial.println("--> Désappareillage <--\n\n");
+          paired = false;
+          break;        
       }
     } else {
-      Serial.printf("Incorrect ChipID\n\n");
+    Serial.printf("Incorrect ChipID\n\n");
     }
   }
 }
@@ -291,4 +249,62 @@ String uint64_t_to_String(uint64_t number) {
   String hex = String(long1, HEX) + String(long2, HEX); // six octets
   hex.toUpperCase();
   return hex;
+}
+
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(analogInput, INPUT);
+
+  //while (!Serial); // If just the the basic function, must connect to a computer
+
+  gpsSerial.begin(9600, SERIAL_8N1, RXD2, TXD2);
+
+  pinMode(25, OUTPUT); // Send success, LED will bright 1 second
+
+  SPI.begin(5, 19, 27, SS);
+  LoRa.setPins(SS, RST, DI0);
+  if (!LoRa.begin(BAND)) {
+    Serial.printf("Starting LoRa failed!\n");
+    while (1);
+  }
+  Serial.printf("LoRa Initial OK!\n");
+
+  getChipId();
+  paired = false;
+  delay(2000);
+}
+
+void loop() {
+  if (paired) {
+    if (millis() - lastSendTime > interval) {
+      gpsInfo();
+      while (gpsSerial.available()) {
+        if (gps.encode(gpsSerial.read())) {
+          gpsInfo();
+          break;
+        }
+      }
+
+      /*if (millis() > 5000 && gps.charsProcessed() < 10) {
+        Serial.printf("No GPS detected\n");
+        while (true);
+        }*/
+
+      Serial.printf("ChipID : %s\n", chipId.c_str());
+
+      getBatteryVoltage();
+
+      // Recuperation en char * de la concat de la valeur
+      encodeMess();
+
+      if (gpsReady) {
+        sendLoRaMessage();
+      } else {
+        Serial.printf("GPS not ready...\n\n");
+      }
+      lastSendTime = millis();
+    }
+  }
+  receiveLoRaMessage();
 }
