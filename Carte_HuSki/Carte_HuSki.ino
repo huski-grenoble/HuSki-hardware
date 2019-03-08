@@ -29,7 +29,6 @@ float gpsLon;
 float gpsAlt;
 bool gpsReady;
 
-String receivedText;
 String receivedTextBinary;
 String receivedRssi;
 long lastSendTime = 0;          // Last send time
@@ -80,6 +79,7 @@ void setup() {
 
 void loop() {
   if (millis() - lastSendTime > interval) {
+    gpsInfo();
     while (gpsSerial.available()) {
       if (gps.encode(gpsSerial.read())) {
         gpsInfo();
@@ -87,10 +87,10 @@ void loop() {
       }
     }
 
-    if (millis() > 5000 && gps.charsProcessed() < 10) {
+    /*if (millis() > 5000 && gps.charsProcessed() < 10) {
       Serial.printf("No GPS detected\n");
       while (true);
-    }
+      }*/
 
     Serial.printf("ChipID : %s\n", chipId.c_str());
 
@@ -104,7 +104,6 @@ void loop() {
     } else {
       Serial.printf("GPS not ready...\n\n");
     }
-
     lastSendTime = millis();
   }
 
@@ -131,13 +130,13 @@ void sendLoRaMessage() {
   Serial.printf("Sending packet: ");
 
   //Serial.printf("%s %.6f %.6f %d", chipId.c_str(), gpsLat, gpsLon, batteryLevel);
-  Serial.printf("%s%s", chipId.c_str(), encodedMess);
+  Serial.printf("%s%s", chipByte, encodedMess);
   Serial.printf("\n\n");
 
   // send packet
   LoRa.beginPacket();
   //LoRa.printf("%s %.6f %.6f %d", chipId.c_str(), gpsLat, gpsLon, batteryLevel);
-  LoRa.printf("%s%s", chipId.c_str(), encodedMess);
+  LoRa.printf("%s%s", chipByte, encodedMess);
   LoRa.endPacket();
 
   digitalWrite(25, HIGH); // Turn the LED on (HIGH is the voltage level)
@@ -151,7 +150,6 @@ void receiveLoRaMessage() {
   if (packetSize) {
     Serial.printf("Received packet '");
     receivedTextBinary = "";
-    receivedText = "";
 
     while (LoRa.available()) {
       receivedTextBinary += (char)LoRa.read();
@@ -164,13 +162,14 @@ void receiveLoRaMessage() {
 
     bool messageForMe = true;
     for (int i = 0; i < 6; i++) {
-      receivedText += String(receivedTextBinary[i], HEX); 
-      if (receivedText[2*i] != chipId[2*i] || receivedText[2*i+1] != chipId[2*i+1]) {
+
+      if (receivedTextBinary[i] != chipByte[i]) {
         messageForMe = false;
+        break;
       }
     }
     if (messageForMe) {
-      if (receivedText[7] == '1') {
+      if (receivedTextBinary[6] == '1') {
         Serial.printf("--> Mode ACTIVE <--\n\n");
         interval = 1000;
       } else {
@@ -286,8 +285,8 @@ String uint64_t_to_String(uint64_t number) {
 
   chipByte[0] = (byte) (long1 >> 8);
   chipByte[1] = (byte) (long1);
-  for(int i = 0 ; i<4 ; i++){
-    chipByte[5-i] = (byte) (long2 >> 8*i);
+  for (int i = 0 ; i < 4 ; i++) {
+    chipByte[5 - i] = (byte) (long2 >> 8 * i);
   }
   String hex = String(long1, HEX) + String(long2, HEX); // six octets
   hex.toUpperCase();

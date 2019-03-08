@@ -42,7 +42,7 @@ unsigned long lastReceivedPacket[15];
 bool activeMode;
 bool ack = true;
 int nbCarte = 0;
-char chipKey[12];
+char chipKey[13];
 int chipKeyInt;
 char receivedBTArray[14];
 
@@ -84,7 +84,7 @@ int inTable() {
   for (int i = 0 ; i < nbCarte ; i++) {
     equal = true;
     for (int j = 0 ; j < 12 ; j++) {
-      if (chipKey[j] != chipKeyTable[j][i]) {
+      if (chipKey[j] != chipKeyTable[i][j]) {
         equal = false;
       }
     }
@@ -92,7 +92,7 @@ int inTable() {
       return i;
     }
   }
-  return NULL;
+  return -1;
 }
 
 void sendLora(char *str) {
@@ -130,21 +130,31 @@ String receive_gps() {
 
 
   String tmpChip;
-  // Serial.println("\n chipKey recupered : ");
+  Serial.println("\n chipKey recupered : ");
   for (int i = 0 ; i < 6 ; i++) {
     tmpChip += String(receivedLora[i], HEX);
   }
-  tmpChip.toCharArray(chipKey, 12);
+  tmpChip.toUpperCase();
+  tmpChip.toCharArray(chipKey, 13);
+  Serial.println(chipKey);
   chipKeyInt = inTable();
+  Serial.printf("chipkeyInt : %d", chipKeyInt);
   activeMode = isChipActive();
 
+  if (chipKeyInt 
+  == -1) {
+    Serial.print("\nThis key is not in the table : ");
+    Serial.println(chipKey);
+    return "";
+  }
+  
   if (activeMode) {
     Serial.println("Paquet reçu de la carte en mode active");
     if (millis() - lastReceivedPacket[chipKeyInt] > 5000) {
       Serial.println("La carte n est pas en mode active");
       (String(chipKey) + String(1)).toCharArray(receivedBTArray, 14);
       delay(100);
-      sendLora(receivedBTArray);
+      sendLora(arrayByteBT.toChar);
     }
     lastReceivedPacket[chipKeyInt] = millis();
   } else {
@@ -153,16 +163,12 @@ String receive_gps() {
       Serial.println("La carte n est pas en mode normale");
       (String(chipKey) + String(0)).toCharArray(receivedBTArray, 14);
       delay(100);
-      sendLora(receivedBTArray);
+      sendLora(arrayByteBT.toChar);
     }
     lastReceivedPacket[chipKeyInt] = millis();
   }
 
-  if (inTable() != NULL) {
-    Serial.print("\nThis key is not in the table : ");
-    Serial.println(chipKey);
-    // return "";
-  }
+
 
   Serial.println("\n cryptedText : ");
   for (int i = 0; i < lengthMess; i++) {
@@ -198,6 +204,12 @@ void receive_bluetooth() {
     for (int i = 0 ; i < 12 ; i++) {
       chipKey[i] = receivedBTArray[i];
     }
+    for (int i = 0 ; i < 6 ; i++) {
+      String tmp = String(receivedBTArray[2 * i]) + String(receivedBTArray[2 * i + 1]);
+      arrayByteBT.toByte[i] = (byte) 
+      strtol( tmp.c_str(), NULL, 16);
+    }
+    arrayByteBT.toByte[6] = (byte) receivedBTArray[12];
     switch (receivedBTArray[12]) {
       case '1':
         for (int i = 0 ; i < 12 ; i++) {
@@ -205,6 +217,7 @@ void receive_bluetooth() {
         }
         chipKeyInt = inTable();
         lastReceivedPacket[chipKeyInt] = millis();
+        sendLora(arrayByteBT.toChar);
         break;
       case '0':
         if (isChipActive) {
@@ -212,6 +225,7 @@ void receive_bluetooth() {
             chipKeyActive[i] = (char) 0;
           }
         }
+        sendLora(arrayByteBT.toChar);
         break;
       case '3':
         // ajout carte
@@ -227,16 +241,7 @@ void receive_bluetooth() {
         break;
 
     }
-    if (!inTable()) {
-
-    }
-    for(int i = 0 ; i<6 ; i++){
-      String tmp = String(receivedBTArray[2*i]) + String(receivedBTArray[2*i+1]); 
-      arrayByteBT.toByte[i] = (byte) strtol( tmp.c_str(), NULL, 16);
-    }
-    sendLora(arrayByteBT.toChar);
     Serial.print("Received:"); Serial.println(receivedBTArray);
-
   }
 }
 
