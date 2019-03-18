@@ -5,17 +5,20 @@
 #include <Arduino.h>
 
 // Choose two Arduino pins to use for software serial
-#define RXD2 16
-#define TXD2 17
+#define RXD2 22
+#define TXD2 23
 
 #define SS 18
 #define RST 14
 #define DI0 26
 #define BAND 433E6
+#define OLED_BTN 0
 
-HardwareSerial gpsSerial(2);
+HardwareSerial gpsSerial(1);
 
-int analogInput = 34;           // Battery voltage pin
+SSD1306 display(0x3c, 4, 15);
+
+int analogInput = 39;           // Battery voltage pin
 float resistance1 = 100000.0;   // First resistance for voltage divider (100 kOhms)
 float resistance2 = 100000.0;   // Second resistance for voltage divider (100 kOhms)
 
@@ -35,6 +38,8 @@ long lastSendTime = 0;          // Last send time
 int interval = 10000;           // Interval between sends
 
 char encodedMess[13];
+
+bool displayOn = true;
 
 // Create a TinyGPS++ object
 TinyGPSPlus gps;
@@ -76,6 +81,7 @@ void sendLoRaMessage() {
 
   //Serial.printf("%s %.6f %.6f %d", chipId.c_str(), gpsLat, gpsLon, batteryLevel);
   Serial.printf("%s%s", chipByte, encodedMess);
+  display.drawString(0, 50, "Sending " + String(chipId) + String(encodedMess));
   Serial.printf("\n\n");
 
   // send packet
@@ -132,10 +138,10 @@ void receiveLoRaMessage() {
         case '4' :
           Serial.println("--> Désappareillage <--\n\n");
           paired = false;
-          break;        
+          break;
       }
     } else {
-    Serial.printf("Incorrect ChipID\n\n");
+      Serial.printf("Incorrect ChipID\n\n");
     }
   }
 }
@@ -153,14 +159,14 @@ void getBatteryVoltage() {
   if (voltageInput  < 0.09) {
     voltageBatterry = 0;
   }
-  /*
-    Serial.printf("AnalogInput : ");
-    Serial.printf("%.2f", voltageInput);
-    Serial.printf(" V\n");
-    Serial.printf("Battery : ");
-    Serial.printf("%.2f", voltageBatterry);
-    Serial.printf(" V\n");
-  */
+  /**/
+  Serial.printf("AnalogInput : ");
+  Serial.printf("%.2f", voltageInput);
+  Serial.printf(" V\n");
+  Serial.printf("Battery : ");
+  Serial.printf("%.2f", voltageBatterry);
+  Serial.printf(" V\n");
+  /**/
   float percentage = (voltageBatterry * 100.0) / 4.0;
   Serial.printf("Percentage : ");
   Serial.printf("%.2f", percentage);
@@ -176,9 +182,8 @@ void getBatteryVoltage() {
   } else if (percentage >= 80.0) {
     batteryLevel = 4;
   }
-  Serial.printf("Level : ");
-  Serial.printf("%d", batteryLevel);
-  Serial.printf("/4\n");
+  Serial.printf("Level : %d /4\n", batteryLevel);
+  display.drawString(0, 40, "Level : " + String(batteryLevel) + "/4 (" + percentage + "%)");
 }
 
 /*------------------------------------------------------------- Get GPS Info ------------------------------------------------------------ */
@@ -195,31 +200,29 @@ void gpsInfo()
     Serial.printf("Altitude: ");
     gpsAlt = gps.altitude.meters();
     Serial.printf("%.2f\n", gpsAlt);
+
+    display.drawString(0, 10, "GPS : " + String(gpsLat, 6) + "; " + String(gpsLon, 6) + "; " + String(gpsAlt, 2));
   } else {
-    //gpsReady = false;
-    /* ----- Génération des coordonnées : À SUPPRIMER ----- */
     gpsReady = true;
     gpsLat = 45.181375;
     gpsLon = 5.743377;
     gpsAlt = 200.12;
-    /* ---------------------------------------------------- */
     Serial.printf("Location : Not Available\n");
+    display.drawString(0, 10, "GPS : Not Available");
   }
-
-  /*
-    Serial.printf("Date : ");
-    if (gps.date.isValid()) {
+  Serial.printf("Date : ");
+  if (gps.date.isValid()) {
     Serial.printf("%d", gps.date.month());
     Serial.printf("/");
     Serial.printf("%d", gps.date.day());
     Serial.printf("/");
     Serial.printf("%d\n", gps.date.year());
-    } else {
+  } else {
     Serial.printf("Not Available\n");
-    }
+  }
 
-    Serial.printf("Time : ");
-    if (gps.time.isValid()) {
+  Serial.printf("Time : ");
+  if (gps.time.isValid()) {
     if (gps.time.hour() < 10) Serial.print(F("0"));
     Serial.printf("%d", gps.time.hour());
     Serial.printf(":");
@@ -231,10 +234,9 @@ void gpsInfo()
     Serial.printf(".");
     if (gps.time.centisecond() < 10) Serial.print(F("0"));
     Serial.printf("%d\n", gps.time.centisecond());
-    } else {
+  } else {
     Serial.printf("Not Available\n");
-    }
-  */
+  }
 }
 
 String uint64_t_to_String(uint64_t number) {
@@ -256,11 +258,25 @@ void setup() {
   Serial.begin(115200);
   pinMode(analogInput, INPUT);
 
+  pinMode(25, OUTPUT); // Send success, LED will bright 1 second
+  pinMode(16, OUTPUT);
+
+  digitalWrite(16, LOW); // set GPIO16 low to reset OLED
+  delay(50);
+  digitalWrite(16, HIGH);
+
   //while (!Serial); // If just the the basic function, must connect to a computer
 
   gpsSerial.begin(9600, SERIAL_8N1, RXD2, TXD2);
 
-  pinMode(25, OUTPUT); // Send success, LED will bright 1 second
+  display.init();
+  //display.flipScreenVertically();
+  display.setFont(ArialMT_Plain_16);
+  display.setTextAlignment(TEXT_ALIGN_LEFT);
+  display.drawString(45, 10, "HuSki");
+  display.drawString(30, 25, "is loading...");
+  display.display();
+  display.setFont(ArialMT_Plain_10);
 
   SPI.begin(5, 19, 27, SS);
   LoRa.setPins(SS, RST, DI0);
@@ -277,8 +293,19 @@ void setup() {
 
 void loop() {
   if (paired) {
+
+    /* Switch Off/On the OLED Display */
+    if (digitalRead(OLED_BTN) && displayOn) {
+      display.displayOff();
+      displayOn = false;
+    } else if (!digitalRead(OLED_BTN) && !displayOn) {
+      display.displayOn();
+      displayOn = true;
+    }
+
     if (millis() - lastSendTime > interval) {
-      gpsInfo();
+      display.clear();
+
       while (gpsSerial.available()) {
         if (gps.encode(gpsSerial.read())) {
           gpsInfo();
@@ -291,7 +318,13 @@ void loop() {
         while (true);
         }*/
 
+      Serial.printf("Time %d\n", millis());
+
+      display.drawString(0, 20, "Time : " + String(millis()));
+
       Serial.printf("ChipID : %s\n", chipId.c_str());
+
+      display.drawString(0, 30, "ChipID : " + String(chipId));
 
       getBatteryVoltage();
 
@@ -303,6 +336,9 @@ void loop() {
       } else {
         Serial.printf("GPS not ready...\n\n");
       }
+
+      display.display();
+
       lastSendTime = millis();
     }
   }
