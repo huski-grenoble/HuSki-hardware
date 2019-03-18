@@ -29,7 +29,6 @@ union {
 int packetSize;
 char chipKeyTable[15][12];
 char chipKeyActive[12];
-String chipIDdecoded;
 unsigned long lastReceivedPacket[15];
 bool activeMode;
 bool ack = true;
@@ -125,8 +124,11 @@ String receive_gps() {
 
 
   String tmpChip;
-
+  
   for (int i = 0 ; i < 6 ; i++) {
+    if(receivedLora[i]<0x10){
+      tmpChip+= "0";
+    }
     tmpChip += String(receivedLora[i], HEX);
   }
   tmpChip.toUpperCase();
